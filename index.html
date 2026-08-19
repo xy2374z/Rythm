@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#000000" />
+<title>RINGRUSH</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#000000;
+    --ink:#ffffff;
+    --muted:#7d7d7d;
+    --dim:#3a3a3a;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); overflow:hidden; overscroll-behavior:none;
+    font-family:'Space Grotesk', sans-serif; color:var(--ink);
+  }
+  #app{ position:fixed; inset:0; touch-action:none; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute; top:0; left:0; right:0;
+    padding: calc(var(--safe-t) + 14px) calc(var(--safe-r) + 16px) 0 calc(var(--safe-l) + 16px);
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none; z-index:5;
+  }
+  .hud-block{ display:flex; flex-direction:column; gap:2px; }
+  .hud-label{ font-size:10px; letter-spacing:.18em; color:var(--muted); text-transform:uppercase; }
+  .hud-value{ font-family:'Orbitron', sans-serif; font-weight:700; font-size:26px; line-height:1.1; color:var(--ink); }
+  #combo-value{ text-align:right; }
+
+  #lives{ display:flex; gap:6px; margin-top:4px; justify-content:flex-end; }
+  .life{ width:9px; height:9px; border-radius:50%; background:var(--ink); transition:opacity .2s, transform .2s; }
+  .life.lost{ opacity:.2; transform:scale(.6); background:var(--dim); }
+
+  /* Gauge */
+  #gauge-wrap{
+    position:absolute; top:calc(var(--safe-t) + 10px); left:50%; transform:translateX(-50%);
+    width:118px; height:118px; pointer-events:none; z-index:5;
+  }
+  #gauge-ring{ width:100%; height:100%; border-radius:50%;
+    background: conic-gradient(from -125deg, #ffffff 0deg, var(--gauge-deg,0deg), rgba(255,255,255,.08) var(--gauge-deg,0deg) 250deg, transparent 250deg 360deg);
+    -webkit-mask: radial-gradient(circle, transparent 62%, black 63%);
+            mask: radial-gradient(circle, transparent 62%, black 63%);
+  }
+  #gauge-center{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #gauge-mult{ font-family:'Orbitron', sans-serif; font-weight:900; font-size:19px; color:var(--ink); }
+  #gauge-label{ font-size:8px; letter-spacing:.2em; color:var(--muted); margin-top:2px; }
+
+  /* ---------- Start / Game-over ---------- */
+  .screen{
+    position:absolute; inset:0; z-index:20;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:26px;
+    background:#000000;
+  }
+  .screen.hidden{ display:none; }
+
+  .tap-circle{
+    width:130px; height:130px; border-radius:50%;
+    border:2px solid var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Orbitron', sans-serif; font-weight:700; font-size:14px;
+    letter-spacing:.15em; color:var(--ink);
+    background:rgba(255,255,255,0.02);
+    animation: pulse 1.8s ease-in-out infinite;
+    cursor:pointer;
+  }
+  @keyframes pulse{
+    0%,100%{ transform:scale(1); box-shadow:0 0 0 0 rgba(255,255,255,0.15); }
+    50%{ transform:scale(1.06); box-shadow:0 0 0 14px rgba(255,255,255,0); }
+  }
+  .tap-circle:active{ transform:scale(.94); }
+
+  .go-stats{
+    position:absolute; top:calc(var(--safe-t) + 40px); left:0; right:0;
+    display:flex; justify-content:center; gap:34px;
+  }
+  .go-stat{ display:flex; flex-direction:column; align-items:center; }
+  .go-stat .n{ font-family:'Orbitron', sans-serif; font-weight:700; font-size:24px; color:var(--ink); }
+  .go-stat .l{ font-size:9px; letter-spacing:.2em; color:var(--muted); text-transform:uppercase; margin-top:4px; }
+
+  /* ---------- Settings dropdown ---------- */
+  .settings-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; }
+  .settings-btn{
+    background:none; border:1px solid var(--dim); border-radius:999px;
+    color:var(--muted); font-family:'Space Grotesk', sans-serif; font-size:12px;
+    letter-spacing:.12em; text-transform:uppercase; padding:10px 18px; cursor:pointer;
+  }
+  .settings-btn.open, .settings-btn:active{ color:var(--ink); border-color:var(--ink); }
+
+  .settings-menu{
+    position:absolute; top:calc(100% + 10px); left:50%; transform:translateX(-50%);
+    display:flex; flex-direction:column; min-width:150px;
+    background:#000000; border:1px solid var(--dim); border-radius:12px;
+    overflow:hidden; z-index:30;
+  }
+  .settings-menu.hidden{ display:none; }
+  .diff-btn{
+    background:none; border:none; border-bottom:1px solid var(--dim);
+    color:var(--ink); font-family:'Space Grotesk', sans-serif; font-size:13px;
+    padding:13px 18px; text-align:center; cursor:pointer; letter-spacing:.03em;
+  }
+  .diff-btn:last-child{ border-bottom:none; }
+  .diff-btn.active{ background:rgba(255,255,255,0.1); font-weight:700; }
+  .diff-btn:active{ background:rgba(255,255,255,0.16); }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="hud-block">
+      <div class="hud-label">Score</div>
+      <div class="hud-value" id="score-value">0</div>
+    </div>
+    <div class="hud-block">
+      <div class="hud-label" style="text-align:right;">Combo</div>
+      <div class="hud-value" id="combo-value">0</div>
+      <div id="lives"></div>
+    </div>
+  </div>
+
+  <div id="gauge-wrap" class="hidden">
+    <div id="gauge-ring"></div>
+    <div id="gauge-center">
+      <div id="gauge-mult">1.0000x</div>
+      <div id="gauge-label">SPEED</div>
+    </div>
+  </div>
+
+  <div id="start-screen" class="screen">
+    <div class="tap-circle" id="start-btn">START</div>
+    <div class="settings-wrap">
+      <button type="button" class="settings-btn" id="settings-btn">Settings ▾</button>
+      <div class="settings-menu hidden" id="settings-menu">
+        <button type="button" class="diff-btn active" data-diff="easy">Easy</button>
+        <button type="button" class="diff-btn" data-diff="normal">Normal</button>
+        <button type="button" class="diff-btn" data-diff="hard">Hard</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameover-screen" class="screen hidden">
+    <div class="go-stats">
+      <div class="go-stat"><div class="n" id="final-score">0</div><div class="l">Score</div></div>
+      <div class="go-stat"><div class="n" id="final-combo">0</div><div class="l">Best Combo</div></div>
+      <div class="go-stat"><div class="n" id="final-mult">1.00x</div><div class="l">Top Speed</div></div>
+    </div>
+    <div class="tap-circle" id="retry-btn">RETRY</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------- CONFIG ----------------
+  const CONFIG = {
+    BASE_MULT_INCREMENT: 0.0025, // per-hit multiplier growth at Easy; Normal = x2 this, Hard = x5 this
+    MULT_MAX:         8.0,
+    BASE_APPROACH_MS: 950,
+    MIN_APPROACH_MS:  260,
+    BASE_SPAWN_MS:    620,
+    MIN_SPAWN_MS:     180,
+    BASE_RADIUS:      44,
+    MIN_RADIUS:       28,
+    APPROACH_SCALE:   2.0,
+    HIT_GRACE:        1.25,
+    LIVES:            3,
+    BASE_POINTS:      100,
+    SWIPE_CHANCE:     0.32,
+    CURVE_CHANCE:     0.5,
+    SWIPE_MIN_DIST:   95,
+    SWIPE_MAX_DIST:   175,
+    SPAWN_ATTEMPTS:   25,
+    SPAWN_PAD:        16,
+  };
+
+  const DIFFICULTY_SCALE = { easy: 1, normal: 2, hard: 5 };
+  let difficulty = 'easy';
+  function currentMultGrowth(){ return 1 + CONFIG.BASE_MULT_INCREMENT * DIFFICULTY_SCALE[difficulty]; }
+
+  // color tuples (r,g,b) — decreasing saturation walks the player through a swipe's steps
+  const WHITE_T = '255,255,255';
+  const GREEN_T = '61,220,132';   // the one circle you actually swipe right now
+  const TURQ_T  = '143,194,190';  // next up — much less saturated
+  const BLUE_T  = '135,145,160';  // the step after that — barely saturated at all
+  function rgbaT(tuple, alpha){ return `rgba(${tuple},${alpha})`; }
+  function solidT(tuple){ return `rgb(${tuple})`; }
+
+  // ---------------- DOM ----------------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const hud = document.getElementById('hud');
+  const gaugeWrap = document.getElementById('gauge-wrap');
+  const scoreEl = document.getElementById('score-value');
+  const comboEl = document.getElementById('combo-value');
+  const livesEl = document.getElementById('lives');
+  const gaugeMultEl = document.getElementById('gauge-mult');
+  const gaugeRingEl = document.getElementById('gauge-ring');
+  const startScreen = document.getElementById('start-screen');
+  const gameoverScreen = document.getElementById('gameover-screen');
+  const startBtn = document.getElementById('start-btn');
+  const retryBtn = document.getElementById('retry-btn');
+  const finalScoreEl = document.getElementById('final-score');
+  const finalComboEl = document.getElementById('final-combo');
+  const finalMultEl = document.getElementById('final-mult');
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsMenu = document.getElementById('settings-menu');
+  const diffBtns = Array.from(document.querySelectorAll('.diff-btn'));
+
+  settingsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = settingsMenu.classList.contains('hidden');
+    settingsMenu.classList.toggle('hidden', !willOpen);
+    settingsBtn.classList.toggle('open', willOpen);
+  });
+  settingsMenu.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => {
+    settingsMenu.classList.add('hidden');
+    settingsBtn.classList.remove('open');
+  });
+  diffBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      difficulty = btn.dataset.diff;
+      diffBtns.forEach(b => b.classList.toggle('active', b === btn));
+      settingsBtn.textContent = 'Settings: ' + btn.textContent + ' ▾';
+      settingsMenu.classList.add('hidden');
+      settingsBtn.classList.remove('open');
+    });
+  });
+
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+  let W = 0, H = 0;
+
+  function resize(){
+    W = window.innerWidth; H = window.innerHeight;
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------------- STATE ----------------
+  let running = false;
+  let score = 0, combo = 0, maxCombo = 0, lives = CONFIG.LIVES, multiplier = 1.0;
+  let notes = [];
+  let popups = [];
+  let lastSpawn = 0;
+  let rafId = null;
+  let idCounter = 0;
+  const activeSwipes = new Map();
+
+  function approachMs(){ return Math.max(CONFIG.MIN_APPROACH_MS, CONFIG.BASE_APPROACH_MS / multiplier); }
+  function spawnMs(){ return Math.max(CONFIG.MIN_SPAWN_MS, CONFIG.BASE_SPAWN_MS / multiplier); }
+  function radiusPx(){ return Math.max(CONFIG.MIN_RADIUS, CONFIG.BASE_RADIUS - (multiplier-1)*4); }
+
+  function resetState(){
+    score = 0; combo = 0; maxCombo = 0; lives = CONFIG.LIVES; multiplier = 1.0;
+    notes = []; popups = []; lastSpawn = 0; idCounter = 0;
+    activeSwipes.clear();
+    renderLives(); updateHud(); updateGauge();
+  }
+
+  function renderLives(){
+    livesEl.innerHTML = '';
+    for(let i=0;i<CONFIG.LIVES;i++){
+      const d = document.createElement('div');
+      d.className = 'life' + (i < CONFIG.LIVES - lives ? ' lost' : '');
+      livesEl.appendChild(d);
+    }
+  }
+
+  function updateHud(){
+    scoreEl.textContent = Math.floor(score).toLocaleString();
+    comboEl.textContent = combo + 'x';
+  }
+
+  function updateGauge(){
+    gaugeMultEl.textContent = multiplier.toFixed(4) + 'x';
+    const frac = Math.min(1, (multiplier - 1) / (CONFIG.MULT_MAX - 1));
+    gaugeRingEl.style.setProperty('--gauge-deg', (frac * 250) + 'deg');
+  }
+
+  function occupiedPoints(n){
+    if (n.type === 'tap') return [{x:n.x, y:n.y, rad:n.r}];
+    return [
+      {x:n.x,  y:n.y,  rad:n.r},
+      {x:n.x2, y:n.y2, rad:n.r * 0.9},
+    ];
+  }
+
+  function findSpawnSpot(isSwipe, r){
+    const margin = r + 10, topPad = 150, bottomPad = 40;
+    let best = null, bestClearance = -Infinity;
+
+    for (let attempt = 0; attempt < CONFIG.SPAWN_ATTEMPTS; attempt++){
+      const x1 = margin + Math.random() * (W - margin*2);
+      const y1 = topPad + Math.random() * (H - topPad - bottomPad - margin);
+      const candidate = { x1, y1 };
+      const points = [{x:x1, y:y1, rad:r}];
+
+      if (isSwipe){
+        const dist = CONFIG.SWIPE_MIN_DIST + Math.random() * (CONFIG.SWIPE_MAX_DIST - CONFIG.SWIPE_MIN_DIST);
+        const angle = Math.random() * Math.PI * 2;
+        let x2 = x1 + Math.cos(angle) * dist;
+        let y2 = y1 + Math.sin(angle) * dist;
+        x2 = Math.min(W - margin, Math.max(margin, x2));
+        y2 = Math.min(H - bottomPad - margin, Math.max(topPad, y2));
+        candidate.x2 = x2; candidate.y2 = y2;
+        points.push({x:x2, y:y2, rad:r*0.9});
+      }
+
+      let clearance = notes.length === 0 ? 9999 : Infinity;
+      if (notes.length > 0){
+        for (const cp of points){
+          for (const n of notes){
+            for (const op of occupiedPoints(n)){
+              const dx = cp.x - op.x, dy = cp.y - op.y;
+              const d = Math.sqrt(dx*dx + dy*dy) - (cp.rad + op.rad + CONFIG.SPAWN_PAD);
+              if (d < clearance) clearance = d;
+            }
+          }
+        }
+      }
+
+      if (clearance > bestClearance){ bestClearance = clearance; best = candidate; }
+      if (clearance >= 0) break;
+    }
+    return best;
+  }
+
+  function spawnNote(now){
+    const r = radiusPx();
+    const isSwipe = Math.random() < CONFIG.SWIPE_CHANCE;
+    const spot = findSpawnSpot(isSwipe, r);
+    if (!spot) return;
+
+    if (!isSwipe){
+      notes.push({
+        id: idCounter++, type:'tap',
+        x: spot.x1, y: spot.y1, r,
+        spawnTime: now,
+        approach: approachMs(),
+      });
+      return;
+    }
+
+    const x1 = spot.x1, y1 = spot.y1, x2 = spot.x2, y2 = spot.y2;
+    const note = {
+      id: idCounter++, type:'swipe',
+      x:x1, y:y1, x2, y2, r,
+      spawnTime: now,
+      approach: approachMs(),
+      engaged: false,
+      curved: Math.random() < CONFIG.CURVE_CHANCE,
+      midReached: false,
+    };
+
+    if (note.curved){
+      const mx = (x1+x2)/2, my = (y1+y2)/2;
+      const dx = x2-x1, dy = y2-y1;
+      const len = Math.max(1, Math.sqrt(dx*dx+dy*dy));
+      const nx = -dy/len, ny = dx/len;
+      const bend = (40 + Math.random()*55) * (Math.random() < 0.5 ? 1 : -1);
+      note.ctrlX = mx + nx*bend;
+      note.ctrlY = my + ny*bend;
+      note.midX = 0.25*x1 + 0.5*note.ctrlX + 0.25*x2;
+      note.midY = 0.25*y1 + 0.5*note.ctrlY + 0.25*y2;
+    }
+
+    notes.push(note);
+  }
+
+  function addPopup(x, y, text){
+    popups.push({ x, y, text, born: performance.now(), life: 650 });
+  }
+
+  function removeNoteById(id){
+    const idx = notes.findIndex(n => n.id === id);
+    if (idx >= 0) notes.splice(idx, 1);
+    for (const [pid, nid] of activeSwipes){ if (nid === id) activeSwipes.delete(pid); }
+  }
+
+  function handleHit(note, progress, label){
+    const dist = Math.abs(progress - 1);
+    const perfect = dist <= 0.18;
+    const accuracy = perfect ? 1.0 : 0.55;
+    const comboMult = 1 + Math.min(combo, 100) * 0.01;
+    const points = Math.round(CONFIG.BASE_POINTS * multiplier * comboMult * accuracy);
+    score += points;
+    combo += 1;
+    maxCombo = Math.max(maxCombo, combo);
+    multiplier = Math.min(CONFIG.MULT_MAX, multiplier * currentMultGrowth());
+    addPopup(note.x, note.y, (perfect ? 'PERFECT +' : 'GOOD +') + points + (label ? ' ' + label : ''));
+    updateHud(); updateGauge();
+  }
+
+  function handleMiss(note){
+    combo = 0;
+    lives -= 1;
+    renderLives();
+    addPopup(note.x, note.y, 'MISS');
+    updateHud();
+    if (lives <= 0){ endGame(); }
+  }
+
+  function pointerToCanvas(evt){
+    const rect = canvas.getBoundingClientRect();
+    return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+  }
+
+  function onPointerDown(evt){
+    if (!running) return;
+    evt.preventDefault();
+    const p = pointerToCanvas(evt);
+    const now = performance.now();
+    for (let i = notes.length - 1; i >= 0; i--){
+      const n = notes[i];
+      const progress = (now - n.spawnTime) / n.approach;
+      if (progress > CONFIG.HIT_GRACE) continue;
+
+      if (n.type === 'tap'){
+        const dx = p.x - n.x, dy = p.y - n.y;
+        if (Math.sqrt(dx*dx + dy*dy) <= n.r){
+          handleHit(n, progress);
+          removeNoteById(n.id);
+          return;
+        }
+      } else if (n.type === 'swipe' && !n.engaged){
+        const dx = p.x - n.x, dy = p.y - n.y;
+        if (Math.sqrt(dx*dx + dy*dy) <= n.r){
+          n.engaged = true;
+          activeSwipes.set(evt.pointerId, n.id);
+          return;
+        }
+      }
+    }
+  }
+
+  function onPointerMove(evt){
+    if (!running) return;
+    const noteId = activeSwipes.get(evt.pointerId);
+    if (noteId === undefined) return;
+    const n = notes.find(nn => nn.id === noteId);
+    if (!n){ activeSwipes.delete(evt.pointerId); return; }
+    const p = pointerToCanvas(evt);
+
+    if (n.curved && !n.midReached){
+      const dx = p.x - n.midX, dy = p.y - n.midY;
+      if (Math.sqrt(dx*dx + dy*dy) <= n.r * 0.9){ n.midReached = true; }
+      return;
+    }
+
+    const dx = p.x - n.x2, dy = p.y - n.y2;
+    if (Math.sqrt(dx*dx + dy*dy) <= n.r){
+      const now = performance.now();
+      const progress = (now - n.spawnTime) / n.approach;
+      handleHit(n, progress, 'SWIPE');
+      removeNoteById(n.id);
+      activeSwipes.delete(evt.pointerId);
+    }
+  }
+
+  function onPointerUp(evt){
+    const noteId = activeSwipes.get(evt.pointerId);
+    if (noteId === undefined) return;
+    activeSwipes.delete(evt.pointerId);
+    const n = notes.find(nn => nn.id === noteId);
+    if (n){ handleMiss(n); removeNoteById(n.id); }
+  }
+
+  canvas.addEventListener('pointerdown', onPointerDown, {passive:false});
+  canvas.addEventListener('pointermove', onPointerMove, {passive:false});
+  window.addEventListener('pointerup', onPointerUp, {passive:false});
+  window.addEventListener('pointercancel', onPointerUp, {passive:false});
+
+  // ---------------- LOOP ----------------
+  function loop(now){
+    if (!running) return;
+    if (now - lastSpawn >= spawnMs()){
+      spawnNote(now);
+      lastSpawn = now;
+    }
+
+    for (let i = notes.length - 1; i >= 0; i--){
+      const n = notes[i];
+      const progress = (now - n.spawnTime) / n.approach;
+      if (progress > CONFIG.HIT_GRACE){
+        handleMiss(n);
+        notes.splice(i, 1);
+        for (const [pid, nid] of activeSwipes){ if (nid === n.id) activeSwipes.delete(pid); }
+      }
+    }
+
+    draw(now);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function draw(now){
+    ctx.clearRect(0,0,W,H);
+
+    ctx.save();
+    ctx.globalAlpha = 0.05;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    const grid = 42;
+    for(let x=0; x<W; x+=grid){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for(let y=0; y<H; y+=grid){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    ctx.restore();
+
+    // which note has the soonest deadline — that's the priority target
+    let nextId = null, minRemaining = Infinity;
+    for (const n of notes){
+      const remaining = (n.spawnTime + n.approach) - now;
+      if (remaining < minRemaining){ minRemaining = remaining; nextId = n.id; }
+    }
+
+    for (const n of notes){
+      const isNext = n.id === nextId;
+      const progress = Math.min(1, (now - n.spawnTime) / n.approach);
+      const ringScale = CONFIG.APPROACH_SCALE - (CONFIG.APPROACH_SCALE - 1) * progress;
+
+      if (n.type === 'tap'){
+        drawApproachNote(n.x, n.y, n.r, ringScale, false, isNext ? GREEN_T : WHITE_T);
+        continue;
+      }
+
+      // swipe note: only the circle you actually swipe right now is green;
+      // the next step is a much-less-saturated turquoise, and the step after
+      // that (curved swipes only) is a barely-saturated blue.
+      const startT = isNext ? GREEN_T : WHITE_T;
+      const secondT = isNext ? TURQ_T : WHITE_T;               // mid checkpoint if curved, else the end point
+      const thirdT  = isNext ? (n.curved ? BLUE_T : TURQ_T) : WHITE_T; // end point, curved swipes only
+
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineWidth = n.r * 1.5;
+      ctx.strokeStyle = rgbaT(startT, 0.16);
+      ctx.beginPath();
+      ctx.moveTo(n.x, n.y);
+      if (n.curved) ctx.quadraticCurveTo(n.ctrlX, n.ctrlY, n.x2, n.y2);
+      else ctx.lineTo(n.x2, n.y2);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = rgbaT(startT, 0.55);
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6,8]);
+      ctx.beginPath();
+      ctx.moveTo(n.x, n.y);
+      if (n.curved) ctx.quadraticCurveTo(n.ctrlX, n.ctrlY, n.x2, n.y2);
+      else ctx.lineTo(n.x2, n.y2);
+      ctx.stroke();
+      ctx.restore();
+
+      if (n.curved){
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(n.midX, n.midY, n.r * 0.32, 0, Math.PI*2);
+        ctx.fillStyle = n.midReached ? rgbaT(secondT, 0.9) : rgbaT(secondT, 0.5);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      drawApproachNote(n.x, n.y, n.r, ringScale, n.engaged, startT);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(n.x2, n.y2, n.r * 0.7, 0, Math.PI*2);
+      const endTuple = n.curved ? thirdT : secondT;
+      ctx.strokeStyle = (n.curved && !n.midReached) ? rgbaT(endTuple, 0.4) : solidT(endTuple);
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    for (let i = popups.length - 1; i >= 0; i--){
+      const p = popups[i];
+      const t = (now - p.born) / p.life;
+      if (t >= 1){ popups.splice(i,1); continue; }
+      ctx.save();
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = "700 15px 'Space Grotesk', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText(p.text, p.x, p.y - 30 * t);
+      ctx.restore();
+    }
+  }
+
+  function drawApproachNote(x, y, r, ringScale, engaged, tuple){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fillStyle = engaged ? rgbaT(tuple, 0.28) : rgbaT(tuple, 0.12);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = solidT(tuple);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r * ringScale, 0, Math.PI*2);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = rgbaT(tuple, 0.85);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------------- FLOW ----------------
+  function startGame(){
+    resetState();
+    running = true;
+    lastSpawn = performance.now() - spawnMs();
+    startScreen.classList.add('hidden');
+    gameoverScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
+    gaugeWrap.classList.remove('hidden');
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function endGame(){
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    hud.classList.add('hidden');
+    gaugeWrap.classList.add('hidden');
+    finalScoreEl.textContent = Math.floor(score).toLocaleString();
+    finalComboEl.textContent = maxCombo;
+    finalMultEl.textContent = multiplier.toFixed(2) + 'x';
+    gameoverScreen.classList.remove('hidden');
+  }
+
+  startBtn.addEventListener('click', startGame);
+  retryBtn.addEventListener('click', startGame);
+
+  document.addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+  document.addEventListener('gesturestart', e => e.preventDefault());
+})();
+</script>
+</body>
+</html>
