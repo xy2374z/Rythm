@@ -147,10 +147,10 @@
   <div id="start-screen" class="screen">
     <div class="tap-circle" id="start-btn">START</div>
     <div class="settings-wrap">
-      <button type="button" class="settings-btn" id="settings-btn">Settings ▾</button>
+      <button type="button" class="settings-btn" id="settings-btn">Settings: Normal ▾</button>
       <div class="settings-menu hidden" id="settings-menu">
-        <button type="button" class="diff-btn active" data-diff="easy">Easy</button>
-        <button type="button" class="diff-btn" data-diff="normal">Normal</button>
+        <button type="button" class="diff-btn" data-diff="easy">Easy</button>
+        <button type="button" class="diff-btn active" data-diff="normal">Normal</button>
         <button type="button" class="diff-btn" data-diff="hard">Hard</button>
       </div>
     </div>
@@ -163,6 +163,14 @@
       <div class="go-stat"><div class="n" id="final-mult">1.00x</div><div class="l">Top Speed</div></div>
     </div>
     <div class="tap-circle" id="retry-btn">RETRY</div>
+    <div class="settings-wrap">
+      <button type="button" class="settings-btn" id="settings-btn-go">Settings: Normal ▾</button>
+      <div class="settings-menu hidden" id="settings-menu-go">
+        <button type="button" class="diff-btn" data-diff="easy">Easy</button>
+        <button type="button" class="diff-btn active" data-diff="normal">Normal</button>
+        <button type="button" class="diff-btn" data-diff="hard">Hard</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -193,16 +201,50 @@
   };
 
   const DIFFICULTY_SCALE = { easy: 1, normal: 2, hard: 5 };
-  let difficulty = 'easy';
+  let difficulty = 'normal';
   function currentMultGrowth(){ return 1 + CONFIG.BASE_MULT_INCREMENT * DIFFICULTY_SCALE[difficulty]; }
 
-  // color tuples (r,g,b) — decreasing saturation walks the player through a swipe's steps
+  // color tuples (r,g,b)
   const WHITE_T = '255,255,255';
-  const GREEN_T = '61,220,132';   // the one circle you actually swipe right now
-  const TURQ_T  = '143,194,190';  // next up — much less saturated
-  const BLUE_T  = '135,145,160';  // the step after that — barely saturated at all
+  const GREEN_T = '150,255,150';  // light green — the one circle you actually swipe right now
+  const CYAN_T  = '20,110,55';    // dark green — the swipe path and every other point along it
   function rgbaT(tuple, alpha){ return `rgba(${tuple},${alpha})`; }
   function solidT(tuple){ return `rgb(${tuple})`; }
+  function rgbToHsv(r, g, b){
+    r/=255; g/=255; b/=255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
+    let h = 0;
+    if (d !== 0){
+      switch(max){
+        case r: h = ((g-b)/d) % 6; break;
+        case g: h = (b-r)/d + 2; break;
+        default: h = (r-g)/d + 4;
+      }
+      h /= 6; if (h < 0) h += 1;
+    }
+    const s = max === 0 ? 0 : d/max;
+    return [h, s, max];
+  }
+  function hsvToRgb(h, s, v){
+    const i = Math.floor(h*6), f = h*6 - i;
+    const p = v*(1-s), q = v*(1-f*s), t = v*(1-(1-f)*s);
+    let r,g,b;
+    switch(i % 6){
+      case 0: r=v; g=t; b=p; break;
+      case 1: r=q; g=v; b=p; break;
+      case 2: r=p; g=v; b=t; break;
+      case 3: r=p; g=q; b=v; break;
+      case 4: r=t; g=p; b=v; break;
+      default: r=v; g=p; b=q;
+    }
+    return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+  }
+  function dullT(tuple, satFactor, brightFactor){
+    const [r,g,b] = tuple.split(',').map(Number);
+    const [h,s,v] = rgbToHsv(r,g,b);
+    const [nr,ng,nb] = hsvToRgb(h, s*(satFactor===undefined?1:satFactor), v*(brightFactor===undefined?1:brightFactor));
+    return `${nr},${ng},${nb}`;
+  }
 
   // ---------------- DOM ----------------
   const canvas = document.getElementById('game');
@@ -221,30 +263,43 @@
   const finalScoreEl = document.getElementById('final-score');
   const finalComboEl = document.getElementById('final-combo');
   const finalMultEl = document.getElementById('final-mult');
-  const settingsBtn = document.getElementById('settings-btn');
-  const settingsMenu = document.getElementById('settings-menu');
-  const diffBtns = Array.from(document.querySelectorAll('.diff-btn'));
-
-  settingsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const willOpen = settingsMenu.classList.contains('hidden');
-    settingsMenu.classList.toggle('hidden', !willOpen);
-    settingsBtn.classList.toggle('open', willOpen);
-  });
-  settingsMenu.addEventListener('click', (e) => e.stopPropagation());
-  document.addEventListener('click', () => {
-    settingsMenu.classList.add('hidden');
-    settingsBtn.classList.remove('open');
-  });
-  diffBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      difficulty = btn.dataset.diff;
-      diffBtns.forEach(b => b.classList.toggle('active', b === btn));
-      settingsBtn.textContent = 'Settings: ' + btn.textContent + ' ▾';
-      settingsMenu.classList.add('hidden');
-      settingsBtn.classList.remove('open');
+  const settingsWidgets = [];
+  function closeAllSettingsMenus(){
+    settingsWidgets.forEach(w => { w.menu.classList.add('hidden'); w.btn.classList.remove('open'); });
+  }
+  function setDifficulty(d){
+    difficulty = d;
+    const label = d.charAt(0).toUpperCase() + d.slice(1);
+    settingsWidgets.forEach(w => {
+      w.diffBtns.forEach(b => b.classList.toggle('active', b.dataset.diff === d));
+      w.btn.textContent = 'Settings: ' + label + ' ▾';
     });
-  });
+  }
+  function setupSettingsWidget(btnId, menuId){
+    const btn = document.getElementById(btnId);
+    const menu = document.getElementById(menuId);
+    const diffBtns = Array.from(menu.querySelectorAll('.diff-btn'));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const willOpen = menu.classList.contains('hidden');
+      closeAllSettingsMenus();
+      menu.classList.toggle('hidden', !willOpen);
+      btn.classList.toggle('open', willOpen);
+    });
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    diffBtns.forEach(b => {
+      b.addEventListener('click', () => {
+        setDifficulty(b.dataset.diff);
+        menu.classList.add('hidden');
+        btn.classList.remove('open');
+      });
+    });
+    settingsWidgets.push({ btn, menu, diffBtns });
+  }
+  setupSettingsWidget('settings-btn', 'settings-menu');
+  setupSettingsWidget('settings-btn-go', 'settings-menu-go');
+  document.addEventListener('click', closeAllSettingsMenus);
+  setDifficulty(difficulty); // sync initial labels/active state on both widgets
 
   let dpr = Math.max(1, window.devicePixelRatio || 1);
   let W = 0, H = 0;
@@ -319,14 +374,23 @@
       const points = [{x:x1, y:y1, rad:r}];
 
       if (isSwipe){
-        const dist = CONFIG.SWIPE_MIN_DIST + Math.random() * (CONFIG.SWIPE_MAX_DIST - CONFIG.SWIPE_MIN_DIST);
-        const angle = Math.random() * Math.PI * 2;
-        let x2 = x1 + Math.cos(angle) * dist;
-        let y2 = y1 + Math.sin(angle) * dist;
-        x2 = Math.min(W - margin, Math.max(margin, x2));
-        y2 = Math.min(H - bottomPad - margin, Math.max(topPad, y2));
-        candidate.x2 = x2; candidate.y2 = y2;
-        points.push({x:x2, y:y2, rad:r*0.9});
+        // clamping the raw endpoint to screen bounds can shorten it a lot when x1,y1
+        // sits near an edge — try several angles for this same start point and only
+        // keep one whose *clamped* length still clears the minimum swipe distance
+        let gotEndpoint = false, ex2 = 0, ey2 = 0;
+        for (let angleTry = 0; angleTry < 8; angleTry++){
+          const dist = CONFIG.SWIPE_MIN_DIST + Math.random() * (CONFIG.SWIPE_MAX_DIST - CONFIG.SWIPE_MIN_DIST);
+          const angle = Math.random() * Math.PI * 2;
+          let cx2 = x1 + Math.cos(angle) * dist;
+          let cy2 = y1 + Math.sin(angle) * dist;
+          cx2 = Math.min(W - margin, Math.max(margin, cx2));
+          cy2 = Math.min(H - bottomPad - margin, Math.max(topPad, cy2));
+          const actualDist = Math.hypot(cx2 - x1, cy2 - y1);
+          if (actualDist >= CONFIG.SWIPE_MIN_DIST){ ex2 = cx2; ey2 = cy2; gotEndpoint = true; break; }
+        }
+        if (!gotEndpoint) continue; // this start point can't fit a long-enough swipe, try a new one
+        candidate.x2 = ex2; candidate.y2 = ey2;
+        points.push({x:ex2, y:ey2, rad:r*0.9});
       }
 
       let clearance = notes.length === 0 ? 9999 : Infinity;
@@ -380,7 +444,10 @@
       const dx = x2-x1, dy = y2-y1;
       const len = Math.max(1, Math.sqrt(dx*dx+dy*dy));
       const nx = -dy/len, ny = dx/len;
-      const bend = (40 + Math.random()*55) * (Math.random() < 0.5 ? 1 : -1);
+      // cap the bend so the curve never sweeps more than ~a quarter circle,
+      // scaled to this swipe's own length so short swipes don't get whipped tight
+      const maxBend = len * 0.55;
+      const bend = maxBend * (0.35 + Math.random()*0.65) * (Math.random() < 0.5 ? 1 : -1);
       note.ctrlX = mx + nx*bend;
       note.ctrlY = my + ny*bend;
       note.midX = 0.25*x1 + 0.5*note.ctrlX + 0.25*x2;
@@ -544,26 +611,34 @@
         continue;
       }
 
-      // swipe note: only the circle you actually swipe right now is green;
-      // the next step is a much-less-saturated turquoise, and the step after
-      // that (curved swipes only) is a barely-saturated blue.
+      // swipe note: the circle you actually swipe right now is green; the path
+      // and every other point along it (checkpoint, end) are cyan-blue.
       const startT = isNext ? GREEN_T : WHITE_T;
-      const secondT = isNext ? TURQ_T : WHITE_T;               // mid checkpoint if curved, else the end point
-      const thirdT  = isNext ? (n.curved ? BLUE_T : TURQ_T) : WHITE_T; // end point, curved swipes only
+      const pathT  = isNext ? CYAN_T  : WHITE_T;
+      const bandWidth = n.r * 1.5;
+
+      const strokeSwipePath = (width, style) => {
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineWidth = width;
+        ctx.strokeStyle = style;
+        ctx.beginPath();
+        ctx.moveTo(n.x, n.y);
+        if (n.curved) ctx.quadraticCurveTo(n.ctrlX, n.ctrlY, n.x2, n.y2);
+        else ctx.lineTo(n.x2, n.y2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // wider, brighter solid layer drawn first — since the layer on top is
+      // narrower, this peeks out around the edges as a clean border
+      strokeSwipePath(bandWidth + 4, solidT(pathT));
+      // fill drawn on top: brightness cut to 12%, saturation halved, well below
+      // the border's full brightness (plain solid colors, no alpha compositing)
+      strokeSwipePath(bandWidth, solidT(dullT(pathT, 0.5, 0.12)));
 
       ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineWidth = n.r * 1.5;
-      ctx.strokeStyle = rgbaT(startT, 0.16);
-      ctx.beginPath();
-      ctx.moveTo(n.x, n.y);
-      if (n.curved) ctx.quadraticCurveTo(n.ctrlX, n.ctrlY, n.x2, n.y2);
-      else ctx.lineTo(n.x2, n.y2);
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.save();
-      ctx.strokeStyle = rgbaT(startT, 0.55);
+      ctx.strokeStyle = rgbaT(pathT, 0.5);
       ctx.lineWidth = 3;
       ctx.setLineDash([6,8]);
       ctx.beginPath();
@@ -577,7 +652,7 @@
         ctx.save();
         ctx.beginPath();
         ctx.arc(n.midX, n.midY, n.r * 0.32, 0, Math.PI*2);
-        ctx.fillStyle = n.midReached ? rgbaT(secondT, 0.9) : rgbaT(secondT, 0.5);
+        ctx.fillStyle = n.midReached ? rgbaT(pathT, 0.85) : rgbaT(pathT, 0.5);
         ctx.fill();
         ctx.restore();
       }
@@ -587,8 +662,7 @@
       ctx.save();
       ctx.beginPath();
       ctx.arc(n.x2, n.y2, n.r * 0.7, 0, Math.PI*2);
-      const endTuple = n.curved ? thirdT : secondT;
-      ctx.strokeStyle = (n.curved && !n.midReached) ? rgbaT(endTuple, 0.4) : solidT(endTuple);
+      ctx.strokeStyle = rgbaT(pathT, 0.5);
       ctx.lineWidth = 2.5;
       ctx.stroke();
       ctx.restore();
