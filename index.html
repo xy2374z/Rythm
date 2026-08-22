@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#000000" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23000'/%3E%3Ccircle cx='50' cy='50' r='32' fill='none' stroke='%23fff' stroke-width='6'/%3E%3Ccircle cx='50' cy='50' r='14' fill='%23fff'/%3E%3C/svg%3E" />
+<title>RINGRUSH</title>
+<style>
+  :root{
+    --bg:#000000;
+    --ink:#ffffff;
+    --muted:#7d7d7d;
+    --dim:#3a3a3a;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-display: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
+  .hidden{ display:none !important; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); overflow:hidden; overscroll-behavior:none;
+    font-family:var(--font-body); color:var(--ink);
+  }
+  #app{ position:fixed; inset:0; touch-action:none; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute; top:0; left:0; right:0;
+    padding: calc(var(--safe-t) + 14px) calc(var(--safe-r) + 16px) 0 calc(var(--safe-l) + 16px);
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none; z-index:5;
+  }
+  .hud-block{ display:flex; flex-direction:column; gap:2px; }
+  .hud-label{ font-size:10px; letter-spacing:.18em; color:var(--muted); text-transform:uppercase; }
+  .hud-value{ font-family:var(--font-display); font-weight:700; font-size:26px; line-height:1.1; color:var(--ink); }
+  #combo-value{ text-align:right; }
+
+  #lives{ display:flex; gap:6px; margin-top:4px; justify-content:flex-end; }
+  .life{ width:9px; height:9px; border-radius:50%; background:var(--ink); transition:opacity .2s, transform .2s; }
+  .life.lost{ opacity:.2; transform:scale(.6); background:var(--dim); }
+
+  /* Gauge */
+  #gauge-wrap{
+    position:absolute; top:calc(var(--safe-t) + 10px); left:50%; transform:translateX(-50%);
+    width:118px; height:118px; pointer-events:none; z-index:5;
+  }
+  #gauge-ring{ width:100%; height:100%; border-radius:50%;
+    background: conic-gradient(from -125deg, #ffffff 0deg, var(--gauge-deg,0deg), rgba(255,255,255,.08) var(--gauge-deg,0deg) 250deg, transparent 250deg 360deg);
+    -webkit-mask: radial-gradient(circle, transparent 62%, black 63%);
+            mask: radial-gradient(circle, transparent 62%, black 63%);
+  }
+  #gauge-center{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #gauge-mult{ font-family:var(--font-display); font-weight:900; font-size:19px; color:var(--ink); }
+  #gauge-label{ font-size:8px; letter-spacing:.2em; color:var(--muted); margin-top:2px; }
+
+  /* ---------- Start / Game-over ---------- */
+  .screen{
+    position:absolute; inset:0; z-index:20;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:20px;
+    background:#000000;
+  }
+  .screen.hidden{ display:none; }
+
+  .tap-circle{
+    width:130px; height:130px; border-radius:50%;
+    border:2px solid var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-display); font-weight:700; font-size:14px;
+    letter-spacing:.15em; color:var(--ink);
+    background:rgba(255,255,255,0.02);
+    animation: pulse 1.8s ease-in-out infinite;
+    cursor:pointer;
+  }
+  @keyframes pulse{
+    0%,100%{ transform:scale(1); box-shadow:0 0 0 0 rgba(255,255,255,0.15); }
+    50%{ transform:scale(1.06); box-shadow:0 0 0 14px rgba(255,255,255,0); }
+  }
+  .tap-circle:active{ transform:scale(.94); }
+
+  .go-stats{
+    position:absolute; top:calc(var(--safe-t) + 40px); left:0; right:0;
+    display:flex; justify-content:center; gap:34px;
+  }
+  .go-stat{ display:flex; flex-direction:column; align-items:center; }
+  .go-stat .n{ font-family:var(--font-display); font-weight:700; font-size:24px; color:var(--ink); }
+  .go-stat .l{ font-size:9px; letter-spacing:.2em; color:var(--muted); text-transform:uppercase; margin-top:4px; }
+
+  /* ---------- Settings dropdown ---------- */
+  .settings-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; }
+  .settings-btn{
+    background:none; border:1px solid var(--dim); border-radius:999px;
+    color:var(--muted); font-family:var(--font-body); font-size:12px;
+    letter-spacing:.12em; text-transform:uppercase; padding:10px 18px; cursor:pointer;
+  }
+  .settings-btn.open, .settings-btn:active{ color:var(--ink); border-color:var(--ink); }
+
+  .settings-menu{
+    position:absolute; top:calc(100% + 10px); left:50%; transform:translateX(-50%);
+    display:flex; flex-direction:column; min-width:150px;
+    background:#000000; border:1px solid var(--dim); border-radius:12px;
+    overflow:hidden; z-index:30;
+  }
+  .settings-menu.hidden{ display:none; }
+  .diff-btn{
+    background:none; border:none; border-bottom:1px solid var(--dim);
+    color:var(--ink); font-family:var(--font-body); font-size:13px;
+    padding:13px 18px; text-align:center; cursor:pointer; letter-spacing:.03em;
+  }
+  .diff-btn:last-child{ border-bottom:none; }
+  .diff-btn.active{ background:rgba(255,255,255,0.1); font-weight:700; }
+  .diff-btn:active{ background:rgba(255,255,255,0.16); }
+
+  /* ---------- Challenge mode ---------- */
+  .challenge-wrap{ display:flex; flex-direction:column; align-items:center; gap:16px; }
+  .challenge-circle{ width:100px; height:100px; font-size:11px; }
+  .mult-stepper{ display:flex; align-items:center; gap:14px; }
+  .step-btn{
+    width:34px; height:34px; border-radius:50%; border:1px solid var(--ink);
+    background:none; color:var(--ink); font-family:var(--font-display); font-size:16px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; line-height:1;
+  }
+  .step-btn:active{ background:rgba(255,255,255,0.15); }
+  #mult-display{ font-family:var(--font-body); font-size:12px; color:var(--muted); letter-spacing:.05em; min-width:96px; text-align:center; }
+
+  /* ---------- No-sliders toggle ---------- */
+  .toggle-row{ display:flex; align-items:center; gap:10px; cursor:pointer; }
+  .toggle-input{ position:absolute; opacity:0; width:0; height:0; }
+  .toggle-box{ width:20px; height:20px; border:1px solid var(--ink); border-radius:4px; position:relative; flex-shrink:0; }
+  .toggle-input:checked + .toggle-box{ background:var(--ink); }
+  .toggle-input:checked + .toggle-box::after{
+    content:''; position:absolute; left:6px; top:2px; width:5px; height:10px;
+    border:solid #000000; border-width:0 2px 2px 0; transform:rotate(45deg);
+  }
+  .toggle-label{ font-size:12px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+  .toggle-input:checked ~ .toggle-label{ color:var(--ink); }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="hud-block">
+      <div class="hud-label">Score</div>
+      <div class="hud-value" id="score-value">0</div>
+    </div>
+    <div class="hud-block">
+      <div class="hud-label" style="text-align:right;">Combo</div>
+      <div class="hud-value" id="combo-value">0</div>
+      <div id="lives"></div>
+      <div class="hud-label hidden" id="challenge-clock" style="text-align:right; font-size:14px; letter-spacing:.05em; color:var(--ink); margin-top:2px;">30s</div>
+    </div>
+  </div>
+
+  <div id="gauge-wrap" class="hidden">
+    <div id="gauge-ring"></div>
+    <div id="gauge-center">
+      <div id="gauge-mult">1.0000x</div>
+      <div id="gauge-label">SPEED</div>
+    </div>
+  </div>
+
+  <div id="start-screen" class="screen">
+    <div class="tap-circle" id="start-btn">START</div>
+    <div class="settings-wrap">
+      <button type="button" class="settings-btn" id="settings-btn">Settings: Normal ▾</button>
+      <div class="settings-menu hidden" id="settings-menu">
+        <button type="button" class="diff-btn" data-diff="easy">Easy</button>
+        <button type="button" class="diff-btn active" data-diff="normal">Normal</button>
+        <button type="button" class="diff-btn" data-diff="hard">Hard</button>
+      </div>
+    </div>
+    <div class="challenge-wrap">
+      <div class="tap-circle challenge-circle" id="challenge-btn">CHALLENGE</div>
+      <div class="mult-stepper">
+        <button type="button" class="step-btn" id="mult-minus">−</button>
+        <span id="mult-display">1.5x Start</span>
+        <button type="button" class="step-btn" id="mult-plus">+</button>
+      </div>
+    </div>
+    <label class="toggle-row">
+      <input type="checkbox" class="toggle-input no-sliders-toggle">
+      <span class="toggle-box"></span>
+      <span class="toggle-label">No Sliders</span>
+    </label>
+  </div>
+
+  <div id="gameover-screen" class="screen hidden">
+    <div class="go-stats" id="go-stats-normal">
+      <div class="go-stat"><div class="n" id="final-score">0</div><div class="l">Score</div></div>
+      <div class="go-stat"><div class="n" id="final-combo">0</div><div class="l">Best Combo</div></div>
+      <div class="go-stat"><div class="n" id="final-mult">1.00x</div><div class="l">Top Speed</div></div>
+    </div>
+    <div class="go-stats hidden" id="go-stats-challenge">
+      <div class="go-stat"><div class="n" id="final-accuracy">0%</div><div class="l">Score</div></div>
+      <div class="go-stat"><div class="n" id="final-hits">0 / 0</div><div class="l">Hit / Total</div></div>
+    </div>
+    <div class="tap-circle" id="retry-btn">RETRY</div>
+    <div class="settings-wrap">
+      <button type="button" class="settings-btn" id="settings-btn-go">Settings: Normal ▾</button>
+      <div class="settings-menu hidden" id="settings-menu-go">
+        <button type="button" class="diff-btn" data-diff="easy">Easy</button>
+        <button type="button" class="diff-btn active" data-diff="normal">Normal</button>
+        <button type="button" class="diff-btn" data-diff="hard">Hard</button>
+      </div>
+    </div>
+    <button type="button" class="settings-btn" id="back-btn">‹ Back</button>
+    <label class="toggle-row">
+      <input type="checkbox" class="toggle-input no-sliders-toggle">
+      <span class="toggle-box"></span>
+      <span class="toggle-label">No Sliders</span>
+    </label>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // Cache this page (and itself) on first load so the game works with
+  // zero network access afterward — no wifi/data needed to play.
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+
+  // ---------------- CONFIG ----------------
+  const CONFIG = {
+    BASE_MULT_INCREMENT: 0.0025, // per-hit multiplier growth at Easy; Normal = x2 this, Hard = x5 this
+    MULT_MAX:         8.0,
+    BASE_APPROACH_MS: 1400,     // on-screen presence per note
+    MIN_APPROACH_MS:  380,
+    BASE_SPAWN_MS:    700,      // ~2 notes overlap on screen at once (approach/spawn ratio)
+    MIN_SPAWN_MS:     190,
+    BASE_RADIUS:      44,
+    MIN_RADIUS:       28,
+    APPROACH_SCALE:   3.0,
+    HIT_GRACE:        1.25,
+    SWIPE_ENGAGED_GRACE_MS: 200, // extra real-time buffer before an actively-held swipe can still expire
+    LIVES:            3,
+    BASE_POINTS:      100,
+    SWIPE_CHANCE:     0.32,
+    CURVE_CHANCE:     0.5,
+    SWIPE_MIN_DIST:   95,
+    SWIPE_MAX_DIST:   175,
+    SPAWN_ATTEMPTS:   25,
+    SPAWN_PAD:        16,
+    CHALLENGE_DURATION_MS: 30000,
+    CHALLENGE_MULT_MIN:  1.5,
+    CHALLENGE_MULT_MAX:  4.0,
+    CHALLENGE_MULT_STEP: 0.1,
+  };
+
+  const DIFFICULTY_SCALE = { easy: 1, normal: 2, hard: 5 };
+  let difficulty = 'normal';
+  function currentMultGrowth(){ return 1 + CONFIG.BASE_MULT_INCREMENT * DIFFICULTY_SCALE[difficulty]; }
+
+  // color tuples (r,g,b)
+  const WHITE_T = '255,255,255';
+  const GREEN_T = '150,255,150';  // light green — the one circle you actually swipe right now
+  const CYAN_T  = '20,110,55';    // dark green — the swipe path and every other point along it
+  function rgbaT(tuple, alpha){ return `rgba(${tuple},${alpha})`; }
+  function solidT(tuple){ return `rgb(${tuple})`; }
+  function rgbToHsv(r, g, b){
+    r/=255; g/=255; b/=255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
+    let h = 0;
+    if (d !== 0){
+      switch(max){
+        case r: h = ((g-b)/d) % 6; break;
+        case g: h = (b-r)/d + 2; break;
+        default: h = (r-g)/d + 4;
+      }
+      h /= 6; if (h < 0) h += 1;
+    }
+    const s = max === 0 ? 0 : d/max;
+    return [h, s, max];
+  }
+  function hsvToRgb(h, s, v){
+    const i = Math.floor(h*6), f = h*6 - i;
+    const p = v*(1-s), q = v*(1-f*s), t = v*(1-(1-f)*s);
+    let r,g,b;
+    switch(i % 6){
+      case 0: r=v; g=t; b=p; break;
+      case 1: r=q; g=v; b=p; break;
+      case 2: r=p; g=v; b=t; break;
+      case 3: r=p; g=q; b=v; break;
+      case 4: r=t; g=p; b=v; break;
+      default: r=v; g=p; b=q;
+    }
+    return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+  }
+  function dullT(tuple, satFactor, brightFactor){
+    const [r,g,b] = tuple.split(',').map(Number);
+    const [h,s,v] = rgbToHsv(r,g,b);
+    const [nr,ng,nb] = hsvToRgb(h, s*(satFactor===undefined?1:satFactor), v*(brightFactor===undefined?1:brightFactor));
+    return `${nr},${ng},${nb}`;
+  }
+
+  // ---------------- DOM ----------------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const hud = document.getElementById('hud');
+  const gaugeWrap = document.getElementById('gauge-wrap');
+  const scoreEl = document.getElementById('score-value');
+  const comboEl = document.getElementById('combo-value');
+  const livesEl = document.getElementById('lives');
+  const gaugeMultEl = document.getElementById('gauge-mult');
+  const gaugeRingEl = document.getElementById('gauge-ring');
+  const startScreen = document.getElementById('start-screen');
+  const gameoverScreen = document.getElementById('gameover-screen');
+  const startBtn = document.getElementById('start-btn');
+  const retryBtn = document.getElementById('retry-btn');
+  const backBtn = document.getElementById('back-btn');
+  const finalScoreEl = document.getElementById('final-score');
+  const finalComboEl = document.getElementById('final-combo');
+  const finalMultEl = document.getElementById('final-mult');
+  const challengeBtn = document.getElementById('challenge-btn');
+  const multMinusBtn = document.getElementById('mult-minus');
+  const multPlusBtn = document.getElementById('mult-plus');
+  const multDisplayEl = document.getElementById('mult-display');
+  const challengeClockEl = document.getElementById('challenge-clock');
+  const goStatsNormalEl = document.getElementById('go-stats-normal');
+  const goStatsChallengeEl = document.getElementById('go-stats-challenge');
+  const finalAccuracyEl = document.getElementById('final-accuracy');
+  const finalHitsEl = document.getElementById('final-hits');
+  const settingsWidgets = [];
+  function closeAllSettingsMenus(){
+    settingsWidgets.forEach(w => { w.menu.classList.add('hidden'); w.btn.classList.remove('open'); });
+  }
+  function setDifficulty(d){
+    difficulty = d;
+    const label = d.charAt(0).toUpperCase() + d.slice(1);
+    settingsWidgets.forEach(w => {
+      w.diffBtns.forEach(b => b.classList.toggle('active', b.dataset.diff === d));
+      w.btn.textContent = 'Settings: ' + label + ' ▾';
+    });
+  }
+  function setupSettingsWidget(btnId, menuId){
+    const btn = document.getElementById(btnId);
+    const menu = document.getElementById(menuId);
+    const diffBtns = Array.from(menu.querySelectorAll('.diff-btn'));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const willOpen = menu.classList.contains('hidden');
+      closeAllSettingsMenus();
+      menu.classList.toggle('hidden', !willOpen);
+      btn.classList.toggle('open', willOpen);
+    });
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    diffBtns.forEach(b => {
+      b.addEventListener('click', () => {
+        setDifficulty(b.dataset.diff);
+        menu.classList.add('hidden');
+        btn.classList.remove('open');
+      });
+    });
+    settingsWidgets.push({ btn, menu, diffBtns });
+  }
+  setupSettingsWidget('settings-btn', 'settings-menu');
+  setupSettingsWidget('settings-btn-go', 'settings-menu-go');
+  document.addEventListener('click', closeAllSettingsMenus);
+  setDifficulty(difficulty); // sync initial labels/active state on both widgets
+
+  let noSliders = false;
+  const noSlidersToggles = Array.from(document.querySelectorAll('.no-sliders-toggle'));
+  function setNoSliders(val){
+    noSliders = val;
+    noSlidersToggles.forEach(cb => { cb.checked = val; });
+  }
+  noSlidersToggles.forEach(cb => cb.addEventListener('change', () => setNoSliders(cb.checked)));
+
+  let challengeStartMult = 1.5;
+  function updateMultDisplay(){
+    multDisplayEl.textContent = challengeStartMult.toFixed(1) + 'x Start';
+  }
+  multMinusBtn.addEventListener('click', () => {
+    challengeStartMult = Math.max(CONFIG.CHALLENGE_MULT_MIN, +(challengeStartMult - CONFIG.CHALLENGE_MULT_STEP).toFixed(1));
+    updateMultDisplay();
+  });
+  multPlusBtn.addEventListener('click', () => {
+    challengeStartMult = Math.min(CONFIG.CHALLENGE_MULT_MAX, +(challengeStartMult + CONFIG.CHALLENGE_MULT_STEP).toFixed(1));
+    updateMultDisplay();
+  });
+  updateMultDisplay();
+
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+  let W = 0, H = 0;
+
+  function resize(){
+    W = window.innerWidth; H = window.innerHeight;
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------------- STATE ----------------
+  let running = false;
+  let isChallenge = false;
+  let challengeEndTime = 0;
+  let totalPerfectHits = 0, totalGoodHits = 0, totalMisses = 0;
+  let score = 0, combo = 0, maxCombo = 0, lives = CONFIG.LIVES, multiplier = 1.0;
+  let notes = [];
+  let popups = [];
+  let lastSpawn = 0;
+  let rafId = null;
+  let idCounter = 0;
+  const activeSwipes = new Map();
+  const lastPointerPos = new Map(); // pointerId -> last {x,y}, used for segment-based swipe detection
+
+  function approachMs(){ return Math.max(CONFIG.MIN_APPROACH_MS, CONFIG.BASE_APPROACH_MS / multiplier); }
+  function spawnMs(){ return Math.max(CONFIG.MIN_SPAWN_MS, CONFIG.BASE_SPAWN_MS / multiplier); }
+  function radiusPx(){ return Math.max(CONFIG.MIN_RADIUS, CONFIG.BASE_RADIUS - (multiplier-1)*4); }
+
+  function resetState(){
+    score = 0; combo = 0; maxCombo = 0; lives = CONFIG.LIVES;
+    multiplier = isChallenge ? challengeStartMult : 1.0;
+    totalPerfectHits = 0; totalGoodHits = 0; totalMisses = 0;
+    notes = []; popups = []; lastSpawn = 0; idCounter = 0;
+    activeSwipes.clear();
+    lastPointerPos.clear();
+    renderLives(); updateHud(); updateGauge();
+  }
+
+  function renderLives(){
+    livesEl.innerHTML = '';
+    for(let i=0;i<CONFIG.LIVES;i++){
+      const d = document.createElement('div');
+      d.className = 'life' + (i < CONFIG.LIVES - lives ? ' lost' : '');
+      livesEl.appendChild(d);
+    }
+  }
+
+  function updateHud(){
+    scoreEl.textContent = Math.floor(score).toLocaleString();
+    comboEl.textContent = combo + 'x';
+  }
+
+  function updateGauge(){
+    gaugeMultEl.textContent = multiplier.toFixed(4) + 'x';
+    const frac = Math.min(1, (multiplier - 1) / (CONFIG.MULT_MAX - 1));
+    gaugeRingEl.style.setProperty('--gauge-deg', (frac * 250) + 'deg');
+  }
+
+  function occupiedPoints(n){
+    if (n.type === 'tap') return [{x:n.x, y:n.y, rad:n.r}];
+    return [
+      {x:n.x,  y:n.y,  rad:n.r},
+      {x:n.x2, y:n.y2, rad:n.r * 0.9},
+    ];
+  }
+
+  function findSpawnSpot(isSwipe, r){
+    const margin = r + 10, topPad = 150, bottomPad = 40;
+    let best = null, bestClearance = -Infinity;
+
+    for (let attempt = 0; attempt < CONFIG.SPAWN_ATTEMPTS; attempt++){
+      const x1 = margin + Math.random() * (W - margin*2);
+      const y1 = topPad + Math.random() * (H - topPad - bottomPad - margin);
+      const candidate = { x1, y1 };
+      const points = [{x:x1, y:y1, rad:r}];
+
+      if (isSwipe){
+        // clamping the raw endpoint to screen bounds can shorten it a lot when x1,y1
+        // sits near an edge — try several angles for this same start point and only
+        // keep one whose *clamped* length still clears the minimum swipe distance
+        let gotEndpoint = false, ex2 = 0, ey2 = 0;
+        for (let angleTry = 0; angleTry < 8; angleTry++){
+          const dist = CONFIG.SWIPE_MIN_DIST + Math.random() * (CONFIG.SWIPE_MAX_DIST - CONFIG.SWIPE_MIN_DIST);
+          const angle = Math.random() * Math.PI * 2;
+          let cx2 = x1 + Math.cos(angle) * dist;
+          let cy2 = y1 + Math.sin(angle) * dist;
+          cx2 = Math.min(W - margin, Math.max(margin, cx2));
+          cy2 = Math.min(H - bottomPad - margin, Math.max(topPad, cy2));
+          const actualDist = Math.hypot(cx2 - x1, cy2 - y1);
+          if (actualDist >= CONFIG.SWIPE_MIN_DIST){ ex2 = cx2; ey2 = cy2; gotEndpoint = true; break; }
+        }
+        if (!gotEndpoint) continue; // this start point can't fit a long-enough swipe, try a new one
+        candidate.x2 = ex2; candidate.y2 = ey2;
+        points.push({x:ex2, y:ey2, rad:r*0.9});
+      }
+
+      let clearance = notes.length === 0 ? 9999 : Infinity;
+      if (notes.length > 0){
+        for (const cp of points){
+          for (const n of notes){
+            for (const op of occupiedPoints(n)){
+              const dx = cp.x - op.x, dy = cp.y - op.y;
+              const d = Math.sqrt(dx*dx + dy*dy) - (cp.rad + op.rad + CONFIG.SPAWN_PAD);
+              if (d < clearance) clearance = d;
+            }
+          }
+        }
+      }
+
+      if (clearance > bestClearance){ bestClearance = clearance; best = candidate; }
+      if (clearance >= 0) break;
+    }
+    return best;
+  }
+
+  function spawnNote(now){
+    const r = radiusPx();
+    const isSwipe = !noSliders && Math.random() < CONFIG.SWIPE_CHANCE;
+    const spot = findSpawnSpot(isSwipe, r);
+    if (!spot) return;
+
+    if (!isSwipe){
+      notes.push({
+        id: idCounter++, type:'tap',
+        x: spot.x1, y: spot.y1, r,
+        spawnTime: now,
+        approach: approachMs(),
+      });
+      return;
+    }
+
+    const x1 = spot.x1, y1 = spot.y1, x2 = spot.x2, y2 = spot.y2;
+    const note = {
+      id: idCounter++, type:'swipe',
+      x:x1, y:y1, x2, y2, r,
+      spawnTime: now,
+      approach: approachMs(),
+      engaged: false,
+      curved: Math.random() < CONFIG.CURVE_CHANCE,
+      midReached: false,
+    };
+
+    if (note.curved){
+      const mx = (x1+x2)/2, my = (y1+y2)/2;
+      const dx = x2-x1, dy = y2-y1;
+      const len = Math.max(1, Math.sqrt(dx*dx+dy*dy));
+      const nx = -dy/len, ny = dx/len;
+      // cap the bend so the curve never sweeps more than ~a quarter circle,
+      // scaled to this swipe's own length so short swipes don't get whipped tight
+      const maxBend = len * 0.55;
+      const bend = maxBend * (0.35 + Math.random()*0.65) * (Math.random() < 0.5 ? 1 : -1);
+      note.ctrlX = mx + nx*bend;
+      note.ctrlY = my + ny*bend;
+      note.midX = 0.25*x1 + 0.5*note.ctrlX + 0.25*x2;
+      note.midY = 0.25*y1 + 0.5*note.ctrlY + 0.25*y2;
+    }
+
+    notes.push(note);
+  }
+
+  function addPopup(x, y, text){
+    popups.push({ x, y, text, born: performance.now(), life: 650 });
+  }
+
+  let pulses = [];
+  function addPulse(x, y, r){
+    pulses.push({ x, y, r, born: performance.now(), life: 260 });
+  }
+
+  function removeNoteById(id){
+    const idx = notes.findIndex(n => n.id === id);
+    if (idx >= 0) notes.splice(idx, 1);
+    for (const [pid, nid] of activeSwipes){ if (nid === id){ activeSwipes.delete(pid); lastPointerPos.delete(pid); } }
+  }
+
+  // shortest distance from a point to a line segment — used so a fast swipe that
+  // "jumps" between two touch samples still registers if it passed through the
+  // target, without needing to enlarge the target's own hit radius
+  function distToSegment(px, py, x1, y1, x2, y2){
+    const dx = x2 - x1, dy = y2 - y1;
+    const lenSq = dx*dx + dy*dy;
+    let t = lenSq === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const cx = x1 + t * dx, cy = y1 + t * dy;
+    const ddx = px - cx, ddy = py - cy;
+    return Math.sqrt(ddx*ddx + ddy*ddy);
+  }
+
+  function handleHit(note, progress, label, atX, atY){
+    const px = atX === undefined ? note.x : atX;
+    const py = atY === undefined ? note.y : atY;
+    const dist = Math.abs(progress - 1);
+    const perfect = dist <= 0.18;
+    if (perfect) totalPerfectHits += 1; else totalGoodHits += 1;
+    const accuracy = perfect ? 1.0 : 0.55;
+    const comboMult = 1 + Math.min(combo, 100) * 0.01;
+    const points = Math.round(CONFIG.BASE_POINTS * multiplier * comboMult * accuracy);
+    score += points;
+    combo += 1;
+    maxCombo = Math.max(maxCombo, combo);
+    if (!isChallenge){
+      multiplier = Math.min(CONFIG.MULT_MAX, multiplier * currentMultGrowth());
+    }
+    addPopup(px, py, (perfect ? 'PERFECT +' : 'GOOD +') + points + (label ? ' ' + label : ''));
+    if (perfect) addPulse(px, py, note.r);
+    updateHud(); updateGauge();
+  }
+
+  function handleMiss(note){
+    totalMisses += 1;
+    combo = 0;
+    addPopup(note.x, note.y, 'MISS');
+    if (!isChallenge){
+      lives -= 1;
+      renderLives();
+      if (lives <= 0){ endGame(); }
+    }
+    updateHud();
+  }
+
+  function pointerToCanvas(evt){
+    const rect = canvas.getBoundingClientRect();
+    return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+  }
+
+  function onPointerDown(evt){
+    if (!running) return;
+    evt.preventDefault();
+    const p = pointerToCanvas(evt);
+    const now = performance.now();
+    for (let i = notes.length - 1; i >= 0; i--){
+      const n = notes[i];
+      const progress = (now - n.spawnTime) / n.approach;
+      if (progress > CONFIG.HIT_GRACE) continue;
+
+      if (n.type === 'tap'){
+        const dx = p.x - n.x, dy = p.y - n.y;
+        if (Math.sqrt(dx*dx + dy*dy) <= n.r){
+          handleHit(n, progress);
+          removeNoteById(n.id);
+          return;
+        }
+      } else if (n.type === 'swipe' && !n.engaged){
+        const dx = p.x - n.x, dy = p.y - n.y;
+        if (Math.sqrt(dx*dx + dy*dy) <= n.r){
+          n.engaged = true;
+          activeSwipes.set(evt.pointerId, n.id);
+          lastPointerPos.set(evt.pointerId, p);
+          return;
+        }
+      }
+    }
+  }
+
+  function onPointerMove(evt){
+    if (!running) return;
+    const noteId = activeSwipes.get(evt.pointerId);
+    if (noteId === undefined) return;
+    const n = notes.find(nn => nn.id === noteId);
+    if (!n){ activeSwipes.delete(evt.pointerId); lastPointerPos.delete(evt.pointerId); return; }
+
+    const last = lastPointerPos.get(evt.pointerId) || pointerToCanvas(evt);
+    // sample every intermediate touch point the OS captured this frame (not just
+    // the latest), and test the whole travelled segment against the target radius
+    // — this is what actually fixes fast swipes "skipping past" a small target,
+    // rather than enlarging the target itself
+    const coalesced = (evt.getCoalescedEvents ? evt.getCoalescedEvents() : []) || [];
+    const points = coalesced.length ? coalesced.map(pointerToCanvas) : [pointerToCanvas(evt)];
+
+    let prev = last;
+    for (const p of points){
+      if (n.curved && !n.midReached){
+        if (distToSegment(n.midX, n.midY, prev.x, prev.y, p.x, p.y) <= n.r * 0.9){
+          n.midReached = true;
+        }
+      } else {
+        if (distToSegment(n.x2, n.y2, prev.x, prev.y, p.x, p.y) <= n.r){
+          const now = performance.now();
+          const progress = (now - n.spawnTime) / n.approach;
+          handleHit(n, progress, 'SWIPE', n.x2, n.y2);
+          removeNoteById(n.id);
+          activeSwipes.delete(evt.pointerId);
+          lastPointerPos.delete(evt.pointerId);
+          return;
+        }
+      }
+      prev = p;
+    }
+    lastPointerPos.set(evt.pointerId, prev);
+  }
+
+  function onPointerUp(evt){
+    const noteId = activeSwipes.get(evt.pointerId);
+    if (noteId === undefined) return;
+    activeSwipes.delete(evt.pointerId);
+    lastPointerPos.delete(evt.pointerId);
+    const n = notes.find(nn => nn.id === noteId);
+    if (n){ handleMiss(n); removeNoteById(n.id); }
+  }
+
+  canvas.addEventListener('pointerdown', onPointerDown, {passive:false});
+  canvas.addEventListener('pointermove', onPointerMove, {passive:false});
+  window.addEventListener('pointerup', onPointerUp, {passive:false});
+  window.addEventListener('pointercancel', onPointerUp, {passive:false});
+
+  // ---------------- LOOP ----------------
+  function loop(now){
+    if (!running) return;
+
+    if (isChallenge){
+      const remaining = Math.max(0, challengeEndTime - now);
+      challengeClockEl.textContent = Math.ceil(remaining/1000) + 's';
+      if (remaining <= 0){ endGame(); return; }
+    }
+
+    if (now - lastSpawn >= spawnMs()){
+      spawnNote(now);
+      lastSpawn = now;
+    }
+
+    for (let i = notes.length - 1; i >= 0; i--){
+      const n = notes[i];
+      const progress = (now - n.spawnTime) / n.approach;
+      const graceLimit = (n.type === 'swipe' && n.engaged)
+        ? CONFIG.HIT_GRACE + (CONFIG.SWIPE_ENGAGED_GRACE_MS / n.approach) // extra real-time buffer while actively held
+        : CONFIG.HIT_GRACE;
+      if (progress > graceLimit){
+        handleMiss(n);
+        notes.splice(i, 1);
+        for (const [pid, nid] of activeSwipes){ if (nid === n.id){ activeSwipes.delete(pid); lastPointerPos.delete(pid); } }
+      }
+    }
+
+    draw(now);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function draw(now){
+    ctx.clearRect(0,0,W,H);
+
+    ctx.save();
+    ctx.globalAlpha = 0.05;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    const grid = 42;
+    for(let x=0; x<W; x+=grid){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for(let y=0; y<H; y+=grid){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    ctx.restore();
+
+    // which two notes have the soonest deadlines — 1st is the priority target,
+    // 2nd is what's coming right after it
+    let nextId = null, secondId = null, minRemaining = Infinity, secondRemaining = Infinity;
+    for (const n of notes){
+      const remaining = (n.spawnTime + n.approach) - now;
+      if (remaining < minRemaining){
+        secondRemaining = minRemaining; secondId = nextId;
+        minRemaining = remaining; nextId = n.id;
+      } else if (remaining < secondRemaining){
+        secondRemaining = remaining; secondId = n.id;
+      }
+    }
+    let nextPos = null, secondPos = null;
+
+    for (const n of notes){
+      const isNext = n.id === nextId;
+      const progress = Math.min(1, (now - n.spawnTime) / n.approach);
+      const ringScale = CONFIG.APPROACH_SCALE - (CONFIG.APPROACH_SCALE - 1) * progress;
+
+      if (n.type === 'tap'){
+        drawApproachNote(n.x, n.y, n.r, ringScale, false, isNext ? GREEN_T : WHITE_T);
+        if (isNext) nextPos = { x: n.x, y: n.y, r: n.r };
+        if (n.id === secondId) secondPos = { x: n.x, y: n.y, r: n.r };
+        continue;
+      }
+
+      // swipe note: the circle you actually swipe right now is green; the path
+      // and every other point along it (checkpoint, end) are cyan-blue.
+      const startT = isNext ? GREEN_T : WHITE_T;
+      const pathT  = isNext ? CYAN_T  : WHITE_T;
+      const bandWidth = n.r * 2;
+
+      const strokeSwipePath = (width, style) => {
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineWidth = width;
+        ctx.strokeStyle = style;
+        ctx.beginPath();
+        ctx.moveTo(n.x, n.y);
+        if (n.curved) ctx.quadraticCurveTo(n.ctrlX, n.ctrlY, n.x2, n.y2);
+        else ctx.lineTo(n.x2, n.y2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // wider, brighter solid layer drawn first — since the layer on top is
+      // narrower, this peeks out around the edges as a clean border
+      strokeSwipePath(bandWidth + 4, solidT(pathT));
+      // fill drawn on top: brightness cut to 12%, saturation halved, well below
+      // the border's full brightness (plain solid colors, no alpha compositing)
+      strokeSwipePath(bandWidth, solidT(dullT(pathT, 0.5, 0.12)));
+
+      ctx.save();
+      ctx.strokeStyle = rgbaT(pathT, 0.5);
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6,8]);
+      ctx.beginPath();
+      ctx.moveTo(n.x, n.y);
+      if (n.curved) ctx.quadraticCurveTo(n.ctrlX, n.ctrlY, n.x2, n.y2);
+      else ctx.lineTo(n.x2, n.y2);
+      ctx.stroke();
+      ctx.restore();
+
+      if (n.curved){
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(n.midX, n.midY, n.r * 0.32, 0, Math.PI*2);
+        ctx.fillStyle = n.midReached ? rgbaT(pathT, 0.85) : rgbaT(pathT, 0.5);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // the circle you actually swipe slides along the path once you've engaged
+      // it — driven purely by elapsed time against the geometric path, never by
+      // where the finger actually is. Before engaging, it sits at the start.
+      let circleX = n.x, circleY = n.y;
+      if (n.engaged){
+        const slideT = Math.min(1, Math.max(0, (now - n.spawnTime) / n.approach));
+        if (n.curved){
+          const it = 1 - slideT;
+          circleX = it*it*n.x + 2*it*slideT*n.ctrlX + slideT*slideT*n.x2;
+          circleY = it*it*n.y + 2*it*slideT*n.ctrlY + slideT*slideT*n.y2;
+        } else {
+          circleX = n.x + (n.x2 - n.x) * slideT;
+          circleY = n.y + (n.y2 - n.y) * slideT;
+        }
+      }
+      drawApproachNote(circleX, circleY, n.r, ringScale, n.engaged, startT);
+      if (isNext) nextPos = { x: circleX, y: circleY, r: n.r };
+      if (n.id === secondId) secondPos = { x: n.x, y: n.y, r: n.r };
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(n.x2, n.y2, n.r * 0.7, 0, Math.PI*2);
+      ctx.strokeStyle = rgbaT(pathT, 0.5);
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (nextPos && secondPos){
+      drawArrowTrail(nextPos, secondPos, GREEN_T);
+    }
+
+    // quick expand-and-reverse pulse on perfect hits
+    const PULSE_T = '80,230,255';
+    for (let i = pulses.length - 1; i >= 0; i--){
+      const p = pulses[i];
+      const t = (now - p.born) / p.life;
+      if (t >= 1){ pulses.splice(i,1); continue; }
+      const envelope = Math.sin(t * Math.PI);
+      const radius = p.r + p.r * 0.35 * envelope;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI*2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = rgbaT(PULSE_T, envelope);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    for (let i = popups.length - 1; i >= 0; i--){
+      const p = popups[i];
+      const t = (now - p.born) / p.life;
+      if (t >= 1){ popups.splice(i,1); continue; }
+      ctx.save();
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = "700 15px -apple-system, sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillText(p.text, p.x, p.y - 30 * t);
+      ctx.restore();
+    }
+  }
+
+  function drawArrowTrail(from, to, tuple){
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return;
+    const angle = Math.atan2(dy, dx);
+    const size = Math.max(14, Math.min(from.r, to.r) * 0.6);
+    // keep clear of both circles' edges so chevrons sit in the gap between them
+    const startOffset = from.r + 12;
+    const endOffset = Math.max(startOffset + size, dist - to.r - 12);
+    const gapDist = Math.max(0, endOffset - startOffset);
+    const arrowSpacing = 32; // px between chevrons — more distance, more arrows
+    const steps = Math.max(1, Math.min(10, Math.round(gapDist / arrowSpacing) + 1));
+    ctx.save();
+    ctx.font = `700 ${size}px ui-monospace, 'SF Mono', Menlo, monospace`;
+    ctx.fillStyle = solidT(tuple);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < steps; i++){
+      const t = steps === 1 ? 0.5 : i / (steps - 1);
+      const d = startOffset + (endOffset - startOffset) * t;
+      if (d <= 0 || d >= dist) continue;
+      const px = from.x + Math.cos(angle) * d;
+      const py = from.y + Math.sin(angle) * d;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(angle);
+      ctx.fillText('>', 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawApproachNote(x, y, r, ringScale, engaged, tuple){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fillStyle = engaged ? rgbaT(tuple, 0.85) : rgbaT(tuple, 0.75);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = solidT(tuple);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r * ringScale, 0, Math.PI*2);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = rgbaT(tuple, 0.85);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------------- FLOW ----------------
+  function startGame(challengeMode){
+    isChallenge = challengeMode;
+    resetState();
+    running = true;
+    lastSpawn = performance.now() - spawnMs();
+    startScreen.classList.add('hidden');
+    gameoverScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
+    gaugeWrap.classList.remove('hidden');
+
+    if (isChallenge){
+      challengeEndTime = performance.now() + CONFIG.CHALLENGE_DURATION_MS;
+      challengeClockEl.classList.remove('hidden');
+      lives = 0; // no lives in challenge mode
+      livesEl.classList.add('hidden');
+      challengeClockEl.textContent = Math.ceil(CONFIG.CHALLENGE_DURATION_MS/1000) + 's';
+    } else {
+      challengeClockEl.classList.add('hidden');
+      livesEl.classList.remove('hidden');
+    }
+
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function endGame(){
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    hud.classList.add('hidden');
+    gaugeWrap.classList.add('hidden');
+
+    if (isChallenge){
+      const totalHits = totalPerfectHits + totalGoodHits;
+      const attempts = totalHits + totalMisses;
+      const qualitySum = totalPerfectHits * 1.0 + totalGoodHits * 0.5;
+      const accuracy = attempts > 0 ? (qualitySum / attempts) * 100 : 0;
+      finalAccuracyEl.textContent = accuracy.toFixed(1) + '%';
+      finalHitsEl.textContent = totalHits + ' / ' + attempts;
+      goStatsNormalEl.classList.add('hidden');
+      goStatsChallengeEl.classList.remove('hidden');
+    } else {
+      finalScoreEl.textContent = Math.floor(score).toLocaleString();
+      finalComboEl.textContent = maxCombo;
+      finalMultEl.textContent = multiplier.toFixed(2) + 'x';
+      goStatsChallengeEl.classList.add('hidden');
+      goStatsNormalEl.classList.remove('hidden');
+    }
+
+    gameoverScreen.classList.remove('hidden');
+  }
+
+  startBtn.addEventListener('click', () => startGame(false));
+  challengeBtn.addEventListener('click', () => startGame(true));
+  retryBtn.addEventListener('click', () => startGame(isChallenge));
+  backBtn.addEventListener('click', () => {
+    gameoverScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  });
+
+  document.addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+  document.addEventListener('gesturestart', e => e.preventDefault());
+})();
+</script>
+</body>
+</html>
